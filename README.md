@@ -85,10 +85,18 @@ hard cuts, so scrubbing across a scene change reads as a dissolve.
 
 | File | What it is | Size |
 |---|---|---|
-| `master.mp4` | 1600x900, crf 27, GOP 10 | 18.0 MB |
-| `master-mobile.mp4` | **native 9:16 centre cut**, 608x1080 | 8.1 MB |
-| `master.webm` | 1280x720 VP9, fallback | 17.1 MB |
+| `master.mp4` | 1280x720, 24fps, crf 26, **GOP 5** | ~18 MB |
+| `master-mobile.mp4` | **native 9:16 centre cut**, 540x960, 24fps, GOP 5 | ~9 MB |
+| `master.webm` | 960x540 VP9, fallback only | ~10 MB |
 | `poster.jpg` / `poster-mobile.jpg` | first frame of each | 0.3 MB |
+
+**These are tuned for seek cost, not for how a paused still looks.** Scrubbing
+asks the decoder to jump to a new time on every scroll frame, and one seek costs
+roughly *pixels per frame x frames back to the nearest keyframe*. 1280x720 at
+GOP 5 is about three times cheaper per seek than 1600x900 at GOP 10 and comes
+out the same file size, which is the whole trade. The sources are 24fps, so
+encoding at 30 was duplicating every fifth frame and making the browser decode
+25 percent more frames for no extra picture.
 
 The mobile file is a real portrait cut, not a shrunken widescreen one. A phone
 held upright only ever shows the middle quarter of a 16:9 frame, so cropping at
@@ -102,11 +110,20 @@ smaller.
 
 ## How the scroll engine works
 
-- The film is fetched as a **blob** and played from an object URL. A plain
-  `<video src>` on a host that does not answer HTTP range requests pins
-  `video.seekable` to `[0,0]` and clamps every seek to frame zero, which looks
-  like a frozen film. The blob removes that whole class of bug, and the thin
-  green line at the top of the hero is the real download progress.
+- **The film streams; it is not downloaded up front.** One 1 byte range probe
+  decides how to load it. A CDN answers `206`, so the browser gets the URL
+  directly and can seek into the file within a few hundred milliseconds. A host
+  that ignores `Range` pins `video.seekable` to `[0,0]` and clamps every seek to
+  frame zero, so there the whole file is pulled into a Blob instead, which is
+  always seekable. The first build always used the Blob, which meant that on a
+  real connection there were many seconds where scrolling moved the captions
+  over a frozen poster. That reads as a broken scrub, and it was the main reason
+  the deployed site felt worse than local, where the file loads in 180ms.
+- Seeks are clamped to what is actually buffered, so a fast scroll into
+  un-downloaded film holds the picture for a beat instead of stalling the
+  decoder on a network round trip.
+- The seek threshold is one frame. Below that, a seek cannot change what is on
+  screen, so it is a decode thrown away.
 - The stage is pinned with **CSS sticky**, and GSAP ScrollTrigger drives the
   scrub. A transform pin recalculates on every resize, and a phone URL bar
   sliding away fires resize constantly, which is the usual cause of the page

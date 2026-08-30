@@ -59,14 +59,21 @@ export default function ScrollStory() {
 
   const reduce = mq('(prefers-reduced-motion: reduce)');
 
-  /* 1. Load the film as a blob.
-     Fetching the master into memory guarantees video.seekable covers the whole
-     file. A plain video src on a host that does not answer byte range requests
-     clamps every seek to frame zero, which reads as a frozen film. */
+  /* 1. Get the film playing as soon as possible.
+     The original build downloaded the whole 18 MB master into a Blob before a
+     single frame could be scrubbed. That guarantees seekability, but on a real
+     connection it also means many seconds where scrolling moves the captions
+     over a completely static poster, which reads as a broken scrub.
+
+     A CDN answers HTTP range requests, so the browser can stream the file and
+     seek into it straight away. One 1 byte probe tells us which world we are in:
+       206  -> stream it natively, scrubbing starts almost immediately
+       else -> fall back to the Blob, which is always seekable
+     The Blob path is what saves hosts (and file:// ) that ignore Range. */
   useEffect(() => {
     if (reduce) return undefined;
-    // H.264 is the scrub source everywhere: it is universally decodable and seeks
-    // fastest. The VP9 file is the fallback if the mp4 cannot be fetched.
+    // H.264 is the scrub source everywhere: it is universally decodable and
+    // seeks fastest. The VP9 file is the fallback if the mp4 cannot be fetched.
     const sources = wantsPortraitFilm()
       ? ['/hero/master-mobile.mp4', '/hero/master.webm']
       : ['/hero/master.mp4', '/hero/master.webm'];
@@ -74,67 +81,101 @@ export default function ScrollStory() {
     let objectUrl;
     let cancelled = false;
 
+    const attachHandlers = (v) => {
+      v.addEventListener('loadedmetadata', () => {
+        ready.current = true;
+        setLoaded(true);
+      });
+      // iOS keeps a muted, never played video blank even after a seek, so the
+      // poster stays up until a real frame has actually painted.
+      v.addEventListener(
+        'seeked',
+        () => {
+          if (posterRef.current) posterRef.current.style.opacity = '0';
+        },
+        { once: true },
+      );
+      v.addEventListener('loadeddata', () => {
+        try { v.pause(); } catch (e) { /* no op */ }
+        if (primed.current) prime(v);
+      });
+      // Report how much is buffered rather than how much has downloaded: with
+      // streaming those are the same thing, and it is what actually gates a seek.
+      v.addEventListener('progress', () => {
+        try {
+          if (v.buffered.length && v.duration) {
+            setLoadPct(Math.round((v.buffered.end(v.buffered.length - 1) / v.duration) * 100));
+          }
+        } catch (e) { /* no op */ }
+      });
+    };
+
+    const loadAsBlob = async (url) => {
+      const res = await fetch(url, ctrl ? { signal: ctrl.signal } : undefined);
+      // Throw rather than return, so the caller's catch can try the next source.
+      if (!res.ok) throw new Error(String(res.status));
+      if (cancelled) return;
+      const total = Number(res.headers.get('content-length')) || 0;
+      const reader = res.body && res.body.getReader ? res.body.getReader() : null;
+      let blob;
+
+      if (reader && total) {
+        const chunks = [];
+        let got = 0;
+        for (;;) {
+          const step = await reader.read();
+          if (step.done) break;
+          chunks.push(step.value);
+          got += step.value.length;
+          setLoadPct(Math.round((got / total) * 100));
+        }
+        blob = new Blob(chunks, {
+          type: url.indexOf('.webm') !== -1 ? 'video/webm' : 'video/mp4',
+        });
+      } else {
+        // Safari 12 has no streaming body reader, so it takes the whole blob.
+        blob = await res.blob();
+        setLoadPct(100);
+      }
+      if (cancelled) return;
+      const v = videoRef.current;
+      if (!v) return;
+      objectUrl = URL.createObjectURL(blob);
+      attachHandlers(v);
+      v.src = objectUrl;
+    };
+
     (async () => {
+      const url = sources[0];
+      const v = videoRef.current;
+      if (!v) return;
+
+      let supportsRanges = false;
       try {
-        let res = null;
-        let url = sources[0];
-        for (let i = 0; i < sources.length; i += 1) {
-          try {
-            const attempt = await fetch(sources[i], ctrl ? { signal: ctrl.signal } : undefined);
-            if (attempt.ok) { res = attempt; url = sources[i]; break; }
-          } catch (err) {
-            if (cancelled) return;
-          }
-        }
-        if (!res || cancelled) return;
-
-        const total = Number(res.headers.get('content-length')) || 0;
-        const reader = res.body && res.body.getReader ? res.body.getReader() : null;
-        let blob;
-
-        if (reader && total) {
-          const chunks = [];
-          let got = 0;
-          for (;;) {
-            const step = await reader.read();
-            if (step.done) break;
-            chunks.push(step.value);
-            got += step.value.length;
-            setLoadPct(Math.round((got / total) * 100));
-          }
-          blob = new Blob(chunks, {
-            type: url.indexOf('.webm') !== -1 ? 'video/webm' : 'video/mp4',
-          });
-        } else {
-          // Safari 12 has no streaming body reader, so it takes the whole blob.
-          blob = await res.blob();
-          setLoadPct(100);
-        }
-        if (cancelled) return;
-
-        objectUrl = URL.createObjectURL(blob);
-        const v = videoRef.current;
-        if (!v) return;
-        v.addEventListener('loadedmetadata', () => {
-          ready.current = true;
-          setLoaded(true);
+        const probe = await fetch(url, {
+          headers: { Range: 'bytes=0-0' },
+          signal: ctrl ? ctrl.signal : undefined,
         });
-        // iOS keeps a muted, never played video blank even after a seek, so the
-        // poster stays up until a real frame has actually painted.
-        v.addEventListener(
-          'seeked',
-          () => {
-            if (posterRef.current) posterRef.current.style.opacity = '0';
-          },
-          { once: true },
-        );
-        v.addEventListener('loadeddata', () => {
-          try { v.pause(); } catch (e) { /* no op */ }
-          if (primed.current) prime(v);
-        });
-        v.src = objectUrl;
+        supportsRanges = probe.status === 206;
       } catch (e) {
-        /* Poster stays up and the captions still play. The story never breaks. */
+        if (cancelled) return;
+      }
+      if (cancelled) return;
+
+      if (supportsRanges) {
+        attachHandlers(v);
+        v.src = url; // the browser streams and seeks natively from here
+        return;
+      }
+
+      // No range support: fall back to the Blob, and to the webm if the mp4 is
+      // missing entirely.
+      try {
+        await loadAsBlob(sources[0]);
+      } catch (e) {
+        try { await loadAsBlob(sources[1]); } catch (e2) {
+          /* Poster stays up and the captions still play. The story never breaks. */
+        }
       }
     })();
 
@@ -196,8 +237,27 @@ export default function ScrollStory() {
       // Never queue a seek while the decoder is still resolving the last one.
       // On a phone a fast flick would otherwise pile up seeks and freeze the film.
       if (v && ready.current && !v.seeking) {
-        const eps = isTouch() ? 0.02 : 0.008; // coarser step on phones, fewer decodes
-        const time = clamp(p, 0, 0.9995) * (v.duration || 1);
+        const dur = v.duration || 1;
+        let time = clamp(p, 0, 0.9995) * dur;
+
+        // While the film is still streaming, never seek past what is actually
+        // buffered. Asking for an unbuffered frame stalls the decoder until the
+        // network answers, which is exactly the hitch this is here to avoid.
+        // Holding at the buffer edge instead just pauses the picture for a
+        // moment while the copy keeps moving.
+        try {
+          if (v.buffered.length) {
+            const bufferedEnd = v.buffered.end(v.buffered.length - 1);
+            if (time > bufferedEnd - 0.1) time = Math.max(0, bufferedEnd - 0.1);
+          }
+        } catch (e) { /* no op */ }
+
+        // One frame is the finest step that can change what is on screen, so
+        // anything smaller is a decode we throw away. The old value was 8ms
+        // against a 33ms frame, which meant seeking roughly four times per
+        // visible change.
+        const frame = 1 / 24; // the film's real frame rate, matching scripts/grade.sh
+        const eps = isTouch() ? frame * 1.5 : frame * 0.9;
         if (Math.abs(v.currentTime - time) > eps) {
           try { v.currentTime = time; } catch (e) { /* decoder busy */ }
         }
