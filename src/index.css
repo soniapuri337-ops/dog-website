@@ -1,0 +1,262 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------------------------------------------------------------------------
+   Metric matched fallbacks.
+   While a webfont is still loading the browser draws the local fallback. These
+   two faces re-shape Georgia and the system sans to sit at roughly Fraunces and
+   Nunito Sans metrics, so when the real font swaps in the text barely moves.
+   `size-adjust` and the override descriptors are ignored by older Safari, which
+   simply gets the plain local font.
+   --------------------------------------------------------------------------- */
+@font-face {
+  font-family: 'Fraunces Fallback';
+  src: local('Georgia'), local('Times New Roman'), local('Times');
+  size-adjust: 107%;
+  ascent-override: 92%;
+  descent-override: 24%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: 'Nunito Fallback';
+  src: local('Segoe UI'), local('Helvetica Neue'), local('Helvetica'), local('Arial');
+  size-adjust: 96%;
+  ascent-override: 101%;
+  descent-override: 35%;
+  line-gap-override: 0%;
+}
+
+@layer base {
+  :root {
+    --paper: #fcfaf6;
+    --cream: #f6f1e8;
+    --sage: #e8f0e6;
+    --blush: #faedf0;
+    --moss: #2c6e4b;
+    --rose: #d4708a;
+    --ink: #24352c;
+    --header-h: 84px;
+
+    /* One viewport-height token for the whole site. Safari 12 through 15.3 has
+       no svh/dvh, so the vh line lands first and the newer units overwrite it
+       only where they parse. */
+    --vh-full: 100vh;
+  }
+
+  @supports (height: 100svh) {
+    :root { --vh-full: 100svh; }
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    scroll-behavior: auto; /* Lenis owns smooth scrolling */
+  }
+
+  body {
+    @apply bg-paper text-ink font-sans antialiased;
+    font-size: 17px;
+    line-height: 1.7;
+    font-optical-sizing: auto;
+    font-kerning: normal;
+    font-feature-settings: 'kern' 1, 'liga' 1, 'calt' 1;
+    overflow-x: hidden;
+    /* Stops iOS from inflating type in landscape. */
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Fraunces carries the warmth: soft terminals, a touch of wonk. The variation
+     settings are ignored on browsers without variable font support, which then
+     simply render the static weight. */
+  .font-display,
+  h1, h2, h3, h4 {
+    font-family: theme('fontFamily.display');
+    font-variation-settings: 'SOFT' 55, 'WONK' 1;
+    letter-spacing: -0.021em;
+    line-height: 1.08;
+  }
+
+  /* text-wrap is progressive: it improves ragging where supported and is
+     ignored everywhere else. Kept off the base rule so Safari 12 is unaffected. */
+  @supports (text-wrap: balance) {
+    h1, h2, h3 { text-wrap: balance; }
+  }
+  @supports (text-wrap: pretty) {
+    p { text-wrap: pretty; }
+  }
+
+  ::selection { background: #f2cbd6; color: #24352c; }
+
+  :focus-visible {
+    outline: 2.5px solid var(--moss);
+    outline-offset: 3px;
+    border-radius: 6px;
+  }
+
+  /* Lenis. The stopped state deliberately does NOT set overflow:hidden, because
+     that removes the scroll container and kills the sticky pinned hero. */
+  html.lenis, html.lenis body { height: auto; }
+  .lenis.lenis-smooth { scroll-behavior: auto !important; }
+}
+
+@layer components {
+  .shell { @apply mx-auto w-full max-w-[1240px] px-5 sm:px-7 lg:px-10; }
+
+  /* ------------------------------------------------------------------
+     ONE display scale for the whole site.
+     Every step declares a static size first and the fluid size second.
+     Safari 12 has no clamp(), drops the second declaration, and keeps a
+     sensible fixed size instead of falling back to the browser default.
+     ------------------------------------------------------------------ */
+  .t-1 {
+    font-size: 2.4rem;
+    font-size: clamp(1.95rem, 1.15rem + 3.1vw, 3.65rem);
+    font-weight: 500;
+    line-height: 1.07;
+    letter-spacing: -0.026em;
+  }
+  .t-2 {
+    font-size: 2.1rem;
+    font-size: clamp(1.85rem, 1.2rem + 2.5vw, 3.1rem);
+    font-weight: 500;
+    line-height: 1.12;
+    letter-spacing: -0.023em;
+  }
+  .t-3 {
+    font-size: 1.5rem;
+    font-size: clamp(1.35rem, 1.1rem + 1vw, 1.85rem);
+    font-weight: 500;
+    line-height: 1.34;
+    letter-spacing: -0.016em;
+  }
+  .t-4 {
+    font-size: 1.22rem;
+    font-weight: 600;
+    line-height: 1.32;
+    letter-spacing: -0.012em;
+  }
+  /* Body steps, so paragraph sizing is part of the same system. */
+  .t-body {
+    font-size: 1.0625rem;
+    line-height: 1.68;
+  }
+  .t-body-lg {
+    font-size: 1.09rem;
+    font-size: clamp(1.06rem, 1rem + 0.3vw, 1.19rem);
+    line-height: 1.66;
+  }
+  .t-small {
+    font-size: 0.94rem;
+    line-height: 1.6;
+  }
+
+  .eyebrow {
+    @apply font-sans font-extrabold uppercase text-rose-ink;
+    font-size: 0.575rem;
+    letter-spacing: 0.13em;
+  }
+  @screen xs {
+    .eyebrow { font-size: 0.63rem; letter-spacing: 0.16em; }
+  }
+  @screen sm {
+    .eyebrow { font-size: 0.72rem; letter-spacing: 0.19em; }
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center rounded-full px-6 py-3 font-sans
+           font-bold transition-all duration-300 ease-out;
+    font-size: 0.98rem;
+    /* Comfortable tap target on every phone. */
+    min-height: 46px;
+  }
+  /* Safari 12 has no flex gap, so button icons space themselves. */
+  .btn > * + * { margin-left: 0.5rem; }
+  @supports (gap: 1px) {
+    .btn { @apply gap-2; }
+    .btn > * + * { margin-left: 0; }
+  }
+
+  .btn-primary {
+    @apply btn bg-moss text-paper shadow-soft hover:bg-moss-deep hover:shadow-lift;
+  }
+  .btn-ghost {
+    @apply btn border border-moss/25 bg-white/70 text-moss hover:border-moss/50 hover:bg-white;
+  }
+
+  .card-soft {
+    @apply rounded-xl2 border border-moss/10 bg-white shadow-soft;
+  }
+
+  /* One hairline that repeats across the page: the quiet connective tissue. */
+  .rule-soft { @apply h-px w-full bg-gradient-to-r from-transparent via-moss/15 to-transparent; }
+
+  /* Safari 12 needs the prefix for sticky. */
+  .sticky-safe {
+    position: -webkit-sticky;
+    position: sticky;
+  }
+
+  /* Frosted surfaces. backdrop-filter needs the webkit prefix on all of iOS,
+     and a browser without it still gets a solid enough background to read on. */
+  .frost {
+    background-color: rgba(255, 255, 255, 0.88);
+  }
+  @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    .frost {
+      background-color: rgba(255, 255, 255, 0.68);
+      -webkit-backdrop-filter: blur(14px) saturate(1.4);
+      backdrop-filter: blur(14px) saturate(1.4);
+    }
+  }
+
+  /* The story eyebrow. A lit chip rather than bare small caps, because small
+     caps cannot be trusted to stay legible across seven different frames. */
+  .story-chip {
+    @apply relative inline-flex max-w-full items-center rounded-full;
+    padding: 0.4rem 0.75rem 0.4rem 0.6rem;
+    background-color: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(212, 112, 138, 0.32);
+    box-shadow:
+      0 0 0 5px rgba(255, 255, 255, 0.42),
+      0 2px 10px rgba(36, 53, 44, 0.1),
+      0 6px 26px rgba(212, 112, 138, 0.26);
+  }
+  @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    .story-chip {
+      background-color: rgba(255, 255, 255, 0.78);
+      -webkit-backdrop-filter: blur(16px) saturate(1.5);
+      backdrop-filter: blur(16px) saturate(1.5);
+    }
+  }
+  .story-chip > * + * { margin-left: 0.5rem; }
+  @screen xs {
+    .story-chip { padding: 0.45rem 1rem 0.45rem 0.8rem; }
+    .story-chip > * + * { margin-left: 0.6rem; }
+  }
+
+  /* The pulsing dot inside the chip and the badge. */
+  .live-dot {
+    @apply relative inline-flex shrink-0 rounded-full bg-rose;
+    width: 0.44rem;
+    height: 0.44rem;
+    box-shadow: 0 0 0 0 rgba(212, 112, 138, 0.6);
+    animation: live-pulse 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  @keyframes live-pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(212, 112, 138, 0.55); }
+    70%  { box-shadow: 0 0 0 9px rgba(212, 112, 138, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(212, 112, 138, 0); }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

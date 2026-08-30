@@ -1,0 +1,8 @@
+ios_saf >= 12
+safari >= 12
+chrome >= 64
+android >= 6
+firefox >= 67
+edge >= 79
+> 0.3%
+not dead

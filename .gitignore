@@ -1,0 +1,22 @@
+# Dependencies and build output
+node_modules
+dist
+.vite
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
+
+# ---------------------------------------------------------------------------
+# Video intermediates. These are NOT needed to run or deploy the site: the
+# finished web files live in public/hero and those ARE committed.
+#
+#   raw/     your seven source clips  (~40 MB)
+#   graded/  ffmpeg working files     (~97 MB)
+#
+# Keep both on your own machine. To rebuild the film after a fresh clone, copy
+# raw/ back in and run:  bash scripts/grade.sh
+# ---------------------------------------------------------------------------
+raw/
+graded/
