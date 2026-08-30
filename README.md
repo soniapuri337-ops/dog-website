@@ -168,10 +168,29 @@ Two notes on how the layout adapts:
 npm run build
 ```
 
-`dist/` is a static site. Because the coming soon pages are client routes, the
-host must serve `index.html` for unknown paths. `public/_redirects` covers
-Netlify. On Vercel add a rewrite of `/(.*)` to `/index.html`; on Apache use
+`dist/` is a static site. `vercel.json` already carries everything Vercel needs,
+so importing the repo and pressing Deploy is the whole job. Do not add comment
+keys to that file: Vercel validates it strictly and rejects any property outside
+its schema, including `comment`.
+
+What is in `vercel.json`, and why:
+
+- **`rewrites`: `/(.*)` to `/index.html`.** The coming soon pages are client
+  routes, so the host has to serve `index.html` for unknown paths or a refresh
+  on `/adopt` returns a 404. Vercel checks the filesystem before applying
+  rewrites, so real files under `/hero`, `/assets` and `/brand` are still served
+  normally and the catch-all is safe.
+- **`/assets/*` cached immutable for a year.** Vite content-hashes those
+  filenames, so a new build is a new URL.
+- **`/hero/*` cached for an hour, then stale-while-revalidate.** The film keeps
+  the *same* filename across builds, so it must not be immutable. If it were,
+  re-running `scripts/grade.sh` and redeploying would leave returning visitors
+  on the old video until the cache expired.
+
+For other hosts: `public/_redirects` covers Netlify; on Apache use
 `FallbackResource /index.html`.
 
-Serve `public/hero/*` with a long cache lifetime, they never change between
-deploys unless you re run the video step.
+**Bandwidth.** Each desktop visitor downloads the 18 MB film, each phone
+visitor 8 MB. On a Vercel Hobby plan the 100 GB monthly allowance works out to
+roughly 5,500 desktop views. Raise `-crf 27` in `scripts/grade.sh` if you need
+smaller files.
